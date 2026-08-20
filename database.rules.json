@@ -1,0 +1,45 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('meta/hostUid').val() === auth.uid && newData.child('members').child(auth.uid).exists()) || (data.exists() && !newData.exists() && data.child('meta/expiresAt').val() <= now))",
+        "meta": {
+          "hostUid": {
+            ".write": "auth != null && (data.parent().child('hostUid').val() === auth.uid || (root.child('rooms').child($roomId).child('members').child(data.val()).child('online').val() !== true && root.child('rooms').child($roomId).child('members').child(newData.val()).child('online').val() === true))",
+            ".validate": "newData.isString()"
+          },
+          "difficulty": {
+            ".write": "auth != null && data.parent().child('hostUid').val() === auth.uid",
+            ".validate": "newData.val() === 'beginner' || newData.val() === 'intermediate' || newData.val() === 'expert'"
+          },
+          "status": {
+            ".write": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).child('online').val() === true",
+            ".validate": "newData.val() === 'waiting' || newData.val() === 'ready' || newData.val() === 'playing' || newData.val() === 'won' || newData.val() === 'lost'"
+          },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "expiresAt": { ".validate": "newData.isNumber() && newData.val() > now" }
+        },
+        "members": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && root.child('rooms').child($roomId).child('meta/expiresAt').val() > now",
+            ".validate": "newData.hasChildren(['uid','nickname','joinedAt','online','lastSeen']) && newData.child('uid').val() === auth.uid && newData.child('nickname').isString() && newData.child('nickname').val().length > 0 && newData.child('nickname').val().length <= 20 && newData.child('joinedAt').isNumber() && newData.child('online').isBoolean() && newData.child('lastSeen').isNumber()"
+          }
+        },
+        "game": {
+          ".write": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).child('online').val() === true && root.child('rooms').child($roomId).child('meta/expiresAt').val() > now && ((!data.exists()) || newData.child('revision').val() === data.child('revision').val() + 1)",
+          ".validate": "newData.hasChildren(['revision','difficulty','rows','cols','mineCount','lives','status','cells']) && newData.child('revision').isNumber() && newData.child('lives').isNumber() && newData.child('lives').val() >= 0 && newData.child('lives').val() <= 255 && newData.child('cells').hasChildren()"
+        },
+        "messages": {
+          ".indexOn": ["createdAt"],
+          "$messageId": {
+            ".write": "auth != null && !data.exists() && root.child('rooms').child($roomId).child('members').child(auth.uid).child('online').val() === true && root.child('rooms').child($roomId).child('meta/expiresAt').val() > now",
+            ".validate": "newData.hasChildren(['uid','nickname','text','createdAt']) && newData.child('uid').val() === auth.uid && newData.child('nickname').isString() && newData.child('nickname').val().length <= 20 && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 300 && newData.child('createdAt').isNumber()"
+          }
+        }
+      }
+    }
+  }
+}
