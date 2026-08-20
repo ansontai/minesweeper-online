@@ -125,30 +125,35 @@ export function subscribeToMessages(roomCode: string, onMessages: (messages: Cha
 export async function setRoomDifficulty(roomCode: string, difficulty: Difficulty, player: PlayerIdentity) {
   const { database } = getFirebaseServices();
   const roomRef = ref(database, `rooms/${roomCode}`);
-  await runTransaction(roomRef, (room: RoomData | null) => {
-    if (!room || room.meta.hostUid !== player.uid || room.game.status !== "waiting") return;
-    room.meta.difficulty = difficulty;
-    room.game = createGame(difficulty, "waiting", room.game.revision + 1);
-    room.game.lastAction = { type: "reset", actorUid: player.uid, at: Date.now() };
-    return room;
+  const snapshot = await get(roomRef);
+  if (!snapshot.exists()) return;
+  const room = snapshot.val() as RoomData;
+  if (room.meta.hostUid !== player.uid || room.game.status !== "waiting") return;
+  const game = createGame(difficulty, "waiting", room.game.revision + 1);
+  game.lastAction = { type: "reset", actorUid: player.uid, at: Date.now() };
+  await update(roomRef, {
+    "meta/difficulty": difficulty,
+    game,
   });
 }
 
 export async function startRound(roomCode: string, difficulty: Difficulty, player: PlayerIdentity) {
   const { database } = getFirebaseServices();
   const roomRef = ref(database, `rooms/${roomCode}`);
-  await runTransaction(roomRef, (room: RoomData | null) => {
-    if (!room || room.meta.hostUid !== player.uid) return;
-    const game = createGame(difficulty, "ready", room.game.revision + 1);
-    game.lastAction = {
-      type: room.game.status === "waiting" ? "start" : "reset",
-      actorUid: player.uid,
-      at: Date.now(),
-    };
-    room.meta.difficulty = difficulty;
-    room.meta.status = "ready";
-    room.game = game;
-    return room;
+  const snapshot = await get(roomRef);
+  if (!snapshot.exists()) return;
+  const room = snapshot.val() as RoomData;
+  if (room.meta.hostUid !== player.uid) return;
+  const game = createGame(difficulty, "ready", room.game.revision + 1);
+  game.lastAction = {
+    type: room.game.status === "waiting" ? "start" : "reset",
+    actorUid: player.uid,
+    at: Date.now(),
+  };
+  await update(roomRef, {
+    "meta/difficulty": difficulty,
+    "meta/status": "ready",
+    game,
   });
 }
 
@@ -199,14 +204,17 @@ export async function markPlayerOffline(roomCode: string, uid: string) {
 export async function claimHostIfNeeded(roomCode: string, uid: string) {
   const { database } = getFirebaseServices();
   const roomRef = ref(database, `rooms/${roomCode}`);
-  await runTransaction(roomRef, (room: RoomData | null) => {
-    if (!room) return room;
-    if (room.members?.[room.meta.hostUid]?.online) return room;
-    const nextHost = Object.values(room.members ?? {})
-      .filter((member) => member.online)
-      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
-    if (!nextHost || nextHost.uid !== uid) return room;
-    room.meta.hostUid = uid;
-    return room;
+  const snapshot = await get(roomRef);
+  if (!snapshot.exists()) return;
+  const room = snapshot.val() as RoomData;
+  if (room.members?.[room.meta.hostUid]?.online) return;
+  const nextHost = Object.values(room.members ?? {})
+    .filter((member) => member.online)
+    .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+  if (!nextHost || nextHost.uid !== uid) return;
+  const hostRef = ref(database, `rooms/${roomCode}/meta/hostUid`);
+  await runTransaction(hostRef, (currentHost: string | null) => {
+    if (currentHost !== room.meta.hostUid) return;
+    return uid;
   });
 }
