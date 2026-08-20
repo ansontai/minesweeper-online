@@ -76,6 +76,41 @@ describe("Realtime Database 安全規則", () => {
     }));
   });
 
+  it("允許房主以窄範圍多路徑更新開始新局", async () => {
+    const room = roomFor("host-start");
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await context.database().ref("rooms/START1").set(room);
+    });
+    const game = createGame("beginner", "ready", room.game.revision + 1);
+    const host = testEnvironment.authenticatedContext("host-start").database();
+    await assertSucceeds(host.ref("rooms/START1").update({
+      "meta/difficulty": "beginner",
+      "meta/status": "ready",
+      game,
+    }));
+  });
+
+  it("拒絕非房主開始新局", async () => {
+    const room = roomFor("host-only");
+    room.members.outsider = {
+      uid: "outsider",
+      nickname: "隊員",
+      joinedAt: now + 1,
+      online: true,
+      lastSeen: now,
+    };
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await context.database().ref("rooms/START2").set(room);
+    });
+    const game = createGame("beginner", "ready", room.game.revision + 1);
+    const outsider = testEnvironment.authenticatedContext("outsider").database();
+    await assertFails(outsider.ref("rooms/START2").update({
+      "meta/difficulty": "beginner",
+      "meta/status": "ready",
+      game,
+    }));
+  });
+
   it("拒絕超過 300 字的聊天室訊息", async () => {
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await context.database().ref("rooms/ROOM04").set(roomFor("host-d"));
